@@ -12,6 +12,7 @@ COMMAND_LIST = ['forward', 'backward', 'volume up', 'volume down', 'up', 'down',
 COMMAND_LIST_PDF = ['zoom in', 'in', 'zoom out', 'out', 'scroll up', 'scroll down', 'up', 'down', 'continue', 'next',
                     'previous']
 
+
 def get_time_to_display(duration):
     # https://stackoverflow.com/questions/775049/how-do-i-convert-seconds-to-hours-minutes-and-seconds
     seconds = int(duration / 1000.0)
@@ -145,6 +146,11 @@ RESET_ACCELERATION_TIMER = 0
 # For Eyebrow
 INITIAL_EYEBROW_ASPECT_RATIO = None
 
+# For eye blink
+blinkCounter = 0
+blinkTimer = 0
+closedEyes = False
+
 def return_processed_image(cv_img):
     global MAR_TIMER
     global WINK_COUNTER
@@ -152,6 +158,12 @@ def return_processed_image(cv_img):
     global ACCELERATION_TIMER
     global RESET_ACCELERATION_TIMER
     global INITIAL_EYEBROW_ASPECT_RATIO
+    global blinkTimer, blinkCounter, closedEyes
+
+    try:
+        videoDuration = findMainWindow().getVideoDuration()
+    except:
+        videoDuration = 0
 
     frame = cv_img
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -203,6 +215,10 @@ def return_processed_image(cv_img):
         cv2.circle(frame, (x, y), 2, GREEN_COLOR, -1)
 
     gesture_mode = config.get_gesture_mode()
+    pause_mode = config.get_pause_mode()
+
+    # Increase video acceleration during forward / backward according to length of video
+    acc_increment = min(videoDuration/300000, 4)
 
     if gesture_mode == 'head':
         cv2.putText(frame, "READING INPUT!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
@@ -216,11 +232,11 @@ def return_processed_image(cv_img):
         dir = direction(nose_point, ANCHOR_POINT, w, h)
         cv2.putText(frame, dir.upper(), (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
         if dir == 'right':
-            set_acceleration()
             findMainWindow().forward(ACCELERATION)
+            set_acceleration(acc_increment=acc_increment)
         elif dir == 'left':
-            set_acceleration()
             findMainWindow().backward(ACCELERATION)
+            set_acceleration(acc_increment=acc_increment)
         elif dir == 'up':
             findMainWindow().vol_up()
         elif dir == 'down':
@@ -229,41 +245,86 @@ def return_processed_image(cv_img):
         if dir != 'left' and dir != 'right':
             ACCELERATION = 1
 
-    # IF the mouth aspect ratio (opening of mouth) is more than threshold, pause or play the video
-    if mar > MOUTH_AR_THRESH:
-        if MAR_TIMER == None:
-            MAR_TIMER = datetime.datetime.now()
-            findMainWindow().play_video()  # Pause or play the video depending on current state
-        # pyag.press('space') # Pressing space does the same thing, but better to use the window's function
 
-    # Delay successive detections by one second
-    if MAR_TIMER != None and datetime.datetime.now() > MAR_TIMER + datetime.timedelta(seconds=1):
-        MAR_TIMER = None
+    if pause_mode == 'mouth':
+        # IF the mouth aspect ratio (opening of mouth) is more than threshold, pause or play the video
+        if mar > MOUTH_AR_THRESH:
+            if MAR_TIMER == None:
+                MAR_TIMER = datetime.datetime.now()
+                findMainWindow().play_video()  # Pause or play the video depending on current state
+            # pyag.press('space') # Pressing space does the same thing, but better to use the window's function
 
+        # Delay successive detections by one second
+        if MAR_TIMER != None and datetime.datetime.now() > MAR_TIMER + datetime.timedelta(seconds=1):
+            MAR_TIMER = None
+
+    # --------------------------------------------------------------------------------
+    # Here we detect if the user closes their eyes for more than 0.5 seconds and pause/play if it happens
+    # --------------------------------------------------------------------------------
+    # if leftEAR < (EYE_AR_THRESH-0.02) and rightEAR < (EYE_AR_THRESH-0.02):
+    #     if blinkTimer == 0:
+    #         blinkTimer = datetime.datetime.now()
+    #
+    #     if isinstance(blinkTimer, datetime.datetime) and \
+    #             datetime.datetime.now() > blinkTimer + datetime.timedelta(seconds=0.5):
+    #         findMainWindow().play_video()
+    #         blinkTimer = 0
+    # else:
+    #     blinkTimer = 0
+    # --------------------------------------------------------------------------------
+
+    if pause_mode == 'blink':
+        # --------------------------------------------------------------------------------
+        # Here we detect if the user blinks three times within a second and pause/play if it happens
+        # --------------------------------------------------------------------------------
+        if leftEAR < (EYE_AR_THRESH - 0.02) and rightEAR < (EYE_AR_THRESH - 0.02) and closedEyes == False:
+            closedEyes = True
+        if not (leftEAR < (EYE_AR_THRESH - 0.02) and rightEAR < (EYE_AR_THRESH - 0.02)) and \
+                closedEyes == True:
+            blinkCounter = blinkCounter + 1
+            if blinkTimer == 0:
+                blinkTimer = datetime.datetime.now()
+            closedEyes = False
+
+        if blinkCounter > 0:
+            cv2.putText(frame,
+                        "Blink Count: {c}".format(c=str(blinkCounter)),
+                        (10, 300),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
+
+        if isinstance(blinkTimer, datetime.datetime) and \
+                datetime.datetime.now() > blinkTimer + datetime.timedelta(seconds=1):
+            blinkTimer = 0
+            blinkCounter = 0
+        if blinkCounter >= 3:
+            findMainWindow().play_video()
+            blinkCounter = 0
+        # --------------------------------------------------------------------------------
 
     if gesture_mode == 'face':
         # Detecting wink
         if diff_ear > WINK_AR_DIFF_THRESH:
             if leftEAR < rightEAR:
                 if leftEAR < EYE_AR_THRESH:
-                    set_acceleration(acc_increment=4)
                     findMainWindow().backward(ACCELERATION)
+                    set_acceleration(acc_increment=acc_increment)
+                    cv2.putText(frame, "LEFT WINK!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
 
             elif leftEAR > rightEAR:
                 if rightEAR < EYE_AR_THRESH:
-                    set_acceleration(acc_increment=4)
                     findMainWindow().forward(ACCELERATION)
+                    set_acceleration(acc_increment=acc_increment)
+                    cv2.putText(frame, "RIGHT WINK!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
 
         # Reset acceleration.
         if diff_ear < WINK_AR_DIFF_THRESH:
             #  or (diff_ear > WINK_AR_DIFF_THRESH and leftEAR > EYE_AR_THRESH and rightEAR > EYE_AR_THRESH)
             if RESET_ACCELERATION_TIMER == 0:
                 RESET_ACCELERATION_TIMER = datetime.datetime.now()
-            if isinstance(RESET_ACCELERATION_TIMER,datetime.datetime):
-                if datetime.datetime.now() > RESET_ACCELERATION_TIMER + datetime.timedelta(seconds=1):
+            if isinstance(RESET_ACCELERATION_TIMER, datetime.datetime):
+                if datetime.datetime.now() > RESET_ACCELERATION_TIMER + datetime.timedelta(seconds=0.3):
                     ACCELERATION = 1
                     RESET_ACCELERATION_TIMER = 0
-
 
         # Detecting eyebrow
         rightEyeBrow = shape[rbStart:rbEnd]
@@ -304,17 +365,43 @@ def return_processed_image(cv_img):
         distance_top = distance(centroid_left_eyebrow, centroid_right_eyebrow)
         distance_bottom = distance(centroid_left_eye, centroid_right_eye)
 
-        height = distance_left if distance_left > distance_right else distance_right
-        width = distance_top if distance_top > distance_bottom else distance_bottom
+        height = max(distance_left, distance_right)
+        width = max(distance_top, distance_bottom)
 
         aspect_ratio = height / width
         if INITIAL_EYEBROW_ASPECT_RATIO == None:
             INITIAL_EYEBROW_ASPECT_RATIO = aspect_ratio
+        cv2.putText(frame,
+                    "Normal Eyebrow AR: {ar}".format(ar=str(round(INITIAL_EYEBROW_ASPECT_RATIO,4))),
+                    (270, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, GREEN_COLOR, 2)
 
-        if aspect_ratio > INITIAL_EYEBROW_ASPECT_RATIO + 0.07:
+
+
+        if aspect_ratio > INITIAL_EYEBROW_ASPECT_RATIO + 0.05:
             findMainWindow().vol_up(5)
-        if aspect_ratio < INITIAL_EYEBROW_ASPECT_RATIO - 0.05:
+            cv2.putText(frame, "EYEBROW UP!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
+            cv2.putText(frame,
+                        "Current Eyebrow AR: {ar}".format(ar=str(round(aspect_ratio, 4))),
+                        (270, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, YELLOW_COLOR, 2)
+
+        if aspect_ratio < INITIAL_EYEBROW_ASPECT_RATIO - 0.06:
             findMainWindow().vol_down(5)
+            cv2.putText(frame, "EYEBROW DOWN!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
+            cv2.putText(frame,
+                        "Current Eyebrow AR: {ar}".format(ar=str(round(aspect_ratio, 4))),
+                        (270, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
+        else:
+            cv2.putText(frame,
+                        "Current Eyebrow AR: {ar}".format(ar=str(round(aspect_ratio, 4))),
+                        (270, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, GREEN_COLOR, 2)
+
+        cv2.line(frame, centroid_right_eyebrow, centroid_right_eye, YELLOW_COLOR, 1)
+        cv2.line(frame, centroid_left_eyebrow, centroid_left_eye, YELLOW_COLOR, 1)
+
 
     return cv_img
 
@@ -329,20 +416,25 @@ def findMainWindow() -> typing.Union[QWidget, None]:
     return None
 
 
-def set_acceleration(acc_increment=2):
+def set_acceleration(acc_increment=1):
     global ACCELERATION_TIMER, ACCELERATION, RESET_ACCELERATION_TIMER
     if ACCELERATION_TIMER == 0:
         ACCELERATION_TIMER = datetime.datetime.now()
     elif datetime.datetime.now() > ACCELERATION_TIMER + datetime.timedelta(seconds=0.5):
-        ACCELERATION = ACCELERATION + acc_increment
+        ACCELERATION = ACCELERATION + ACCELERATION*acc_increment
         ACCELERATION_TIMER = 0
 
     if isinstance(RESET_ACCELERATION_TIMER, datetime.datetime):
         RESET_ACCELERATION_TIMER = datetime.datetime.now()
 
 
-def PolyArea(x,y):
-    return 0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1)))
+def PolyArea(x, y):
+    return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
-def distance(p1,p2):
+
+def distance(p1, p2):
     return math.sqrt((p1[0] - p2[0]) ** 2 + (p2[1] - p1[1]) ** 2)
+
+def reset_aspect_ratio():
+    global INITIAL_EYEBROW_ASPECT_RATIO
+    INITIAL_EYEBROW_ASPECT_RATIO = None

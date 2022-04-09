@@ -27,7 +27,8 @@ class CameraThread(QThread):
 
                 try:
                     cv_img = return_processed_image(cv_img)
-                except:
+                except Exception as e:
+                    print(e)
                     print("Error while using gestures")
 
                 self.change_pixmap_signal.emit(cv_img)

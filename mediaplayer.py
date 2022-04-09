@@ -4,15 +4,19 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread, QUrl
 import cv2
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QHBoxLayout, QVBoxLayout, QStyle, QSlider, QLabel, \
-    QFileDialog, QAction, QShortcut, QFrame
+    QFileDialog, QAction, QShortcut, QFrame, QLineEdit, QTextEdit
 from PyQt5.QtGui import QIcon, QPalette, QColor, QKeySequence
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 
 import config
+import logger
+import util
 from ThreadMaker import CameraThread, VoiceThread
 from mslider import MSlider
 from util import *
+from playsound import playsound
+
 
 class Window(QWidget):
     def __init__(self):
@@ -136,6 +140,8 @@ class Window(QWidget):
         self.camera_on = True
         self.voice_on = False
 
+        self.taskOn = False
+
     def create_right_panel(self):
         vboxRight = QVBoxLayout()
 
@@ -163,32 +169,70 @@ class Window(QWidget):
         self.gestureInputMode.setAlignment(Qt.AlignCenter)
         vboxRight.addWidget(self.gestureInputMode)
 
-        self.toggleInputModeButton = QPushButton("Toggle Tracking Mode")
+        self.toggleInputModeButton = QPushButton("Toggle Gesture Mode")
         self.toggleInputModeButton.clicked.connect(self.toggle_input_mode)
         vboxRight.addWidget(self.toggleInputModeButton)
 
-        self.voiceInfoLabel = QLabel("Voice Input is Off")
-        self.voiceInfoLabel.setStyleSheet("background:white; text-align:center")
-        self.voiceInfoLabel.setAlignment(Qt.AlignCenter)
-        vboxRight.addWidget(self.voiceInfoLabel)
+        self.pausePlayMode = QLabel(f"Pause/Play mode: {config.get_pause_mode()}")
+        self.pausePlayMode.setStyleSheet("background:white; text-align:center")
+        self.pausePlayMode.setAlignment(Qt.AlignCenter)
+        vboxRight.addWidget(self.pausePlayMode)
 
-        self.toggleVoiceButton = QPushButton("Toggle Voice")
-        self.toggleVoiceButton.clicked.connect(self.toggle_voice)
-        vboxRight.addWidget(self.toggleVoiceButton)
+        self.togglePauseModeButton = QPushButton("Toggle Pause/Play Mode")
+        self.togglePauseModeButton.clicked.connect(self.toggle_pause_mode)
+        vboxRight.addWidget(self.togglePauseModeButton)
 
-        self.voiceStatusLabel = QLabel()
-        self.voiceStatusLabel.setWordWrap(True)
-        self.voiceStatusLabel.setStyleSheet("background:white; text-align:center")
-        self.voiceStatusLabel.setAlignment(Qt.AlignCenter)
-        vboxRight.addWidget(self.voiceStatusLabel)
+        self.resetEyebrowAspectButton = QPushButton("Reset Eyebrow Aspect Ratio")
+        self.resetEyebrowAspectButton.clicked.connect(self.reset_eyebrow_aspect_ratio)
+        vboxRight.addWidget(self.resetEyebrowAspectButton)
 
-        self.voiceDetectionLabel = QLabel()
-        self.voiceDetectionLabel.setWordWrap(True)
-        self.voiceDetectionLabel.setStyleSheet("background:white; text-align:center")
-        self.voiceDetectionLabel.setAlignment(Qt.AlignCenter)
-        vboxRight.addWidget(self.voiceDetectionLabel)
+        self.emptyLabel = QLabel("")
+        vboxRight.addWidget(self.emptyLabel)
+
+        self.participantLabel = QLabel("Participant:")
+        self.participantLabel.setStyleSheet("background:white; text-align:center")
+        vboxRight.addWidget(self.participantLabel)
+        self.participantLineEdit = QLineEdit()
+        self.participantLineEdit.setMaximumWidth(350)
+        vboxRight.addWidget(self.participantLineEdit)
+
+        self.taskLabel = QLabel("Task:")
+        self.taskLabel.setStyleSheet("background:white; text-align:center")
+        vboxRight.addWidget(self.taskLabel)
+        self.taskLineEdit = QLineEdit()
+        self.taskLineEdit.setMaximumWidth(350)
+        vboxRight.addWidget(self.taskLineEdit)
+
+        # --------------------------------------------------------------------------------
+        # FOR VOICE CONTROL
+        # --------------------------------------------------------------------------------
+        # self.voiceInfoLabel = QLabel("Voice Input is Off")
+        # self.voiceInfoLabel.setStyleSheet("background:white; text-align:center")
+        # self.voiceInfoLabel.setAlignment(Qt.AlignCenter)
+        # vboxRight.addWidget(self.voiceInfoLabel)
+        #
+        # self.toggleVoiceButton = QPushButton("Toggle Voice")
+        # self.toggleVoiceButton.clicked.connect(self.toggle_voice)
+        # vboxRight.addWidget(self.toggleVoiceButton)
+        #
+        # self.voiceStatusLabel = QLabel()
+        # self.voiceStatusLabel.setWordWrap(True)
+        # self.voiceStatusLabel.setStyleSheet("background:white; text-align:center")
+        # self.voiceStatusLabel.setAlignment(Qt.AlignCenter)
+        # vboxRight.addWidget(self.voiceStatusLabel)
+        #
+        # self.voiceDetectionLabel = QLabel()
+        # self.voiceDetectionLabel.setWordWrap(True)
+        # self.voiceDetectionLabel.setStyleSheet("background:white; text-align:center")
+        # self.voiceDetectionLabel.setAlignment(Qt.AlignCenter)
+        # vboxRight.addWidget(self.voiceDetectionLabel)
+        # --------------------------------------------------------------------------------
 
         # self.voiceThread.start()
+
+        self.startTaskButton = QPushButton("Start Task")
+        self.startTaskButton.clicked.connect(self.start_task)
+        vboxRight.addWidget(self.startTaskButton)
 
         self.rightFrame = QFrame()
         self.rightFrame.setFixedWidth(350)
@@ -199,6 +243,22 @@ class Window(QWidget):
         vboxRight.setStretch(2, 0)
 
         return vboxRight
+
+    def start_task(self):
+        participant = self.participantLineEdit.text()
+        task = self.taskLineEdit.text()
+        _time = time.time()
+        if self.taskOn:
+            self.taskOn = False
+            self.startTaskButton.setText("Start Task")
+            state = 'Stop'
+        else:
+            self.taskOn = True
+            self.startTaskButton.setText("Stop Task")
+            state = 'Start'
+        logger.log(participant, task, state, _time)
+
+
 
     def get_right_panel_widgets(self):
         widget_list = []
@@ -259,10 +319,24 @@ class Window(QWidget):
         gm = config.get_gesture_mode()
         if gm == 'head':
             config.set_gesture_mode('face')
+            gm = 'face'
         else:
             config.set_gesture_mode('head')
-
+            gm = 'head'
         self.gestureInputMode.setText(f"Gesture mode: {gm}")
+
+    def reset_eyebrow_aspect_ratio(self):
+        util.reset_aspect_ratio()
+
+    def toggle_pause_mode(self):
+        pm = config.get_pause_mode()
+        if pm == 'mouth':
+            config.set_pause_mode('blink')
+            pm = 'blink'
+        else:
+            config.set_pause_mode('mouth')
+            pm = 'mouth'
+        self.pausePlayMode.setText(f"Pause/play mode: {pm}")
 
     def toggle_voice(self):
         if self.voice_on:
@@ -300,11 +374,15 @@ class Window(QWidget):
             self.mediaPlayer.pause()
         else:
             self.mediaPlayer.play()
+        playsound(u'sounds/playcropped.wav')
 
     def duration_changed(self, duration):
         self.videoSlider.setRange(0, duration)
         self.timeTotalLabel.setText(get_time_to_display(duration))
         self.maxDuration = duration
+
+    def getVideoDuration(self):
+        return self.maxDuration
 
     def position_changed(self, duration):
         self.videoSlider.setValue(duration)
@@ -321,10 +399,10 @@ class Window(QWidget):
             )
 
     def forward(self, acceleration=1):
-        self.mediaPlayer.setPosition(min(self.mediaPlayer.position() + 10000*acceleration, self.maxDuration))
+        self.mediaPlayer.setPosition(min(self.mediaPlayer.position() + 5000*acceleration, self.maxDuration))
 
     def backward(self, acceleration=1):
-        self.mediaPlayer.setPosition(max(self.mediaPlayer.position() - 10000*acceleration, 0))
+        self.mediaPlayer.setPosition(max(self.mediaPlayer.position() - 5000*acceleration, 0))
 
     def vol_up(self, val=10):
         self.volumeSlider.setValue(min(self.volumeSlider.value() + val, 100))
@@ -347,9 +425,6 @@ class Window(QWidget):
     def convert_cv_qt(self, cv_img):
         """Convert from an opencv image to QPixmap"""
         rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-        # rgb_image = cv2.flip(rgb_image, 1)
-
-
 
         h, w, ch = rgb_image.shape
         bytes_per_line = ch * w
