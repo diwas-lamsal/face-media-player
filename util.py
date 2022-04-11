@@ -151,6 +151,7 @@ blinkCounter = 0
 blinkTimer = 0
 closedEyes = False
 
+
 def return_processed_image(cv_img):
     global MAR_TIMER
     global WINK_COUNTER
@@ -218,7 +219,7 @@ def return_processed_image(cv_img):
     pause_mode = config.get_pause_mode()
 
     # Increase video acceleration during forward / backward according to length of video
-    acc_increment = min(videoDuration/300000, 4)
+    acc_increment = min(videoDuration / 300000, 2)
 
     if gesture_mode == 'head':
         cv2.putText(frame, "READING INPUT!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
@@ -238,13 +239,12 @@ def return_processed_image(cv_img):
             findMainWindow().backward(ACCELERATION)
             set_acceleration(acc_increment=acc_increment)
         elif dir == 'up':
-            findMainWindow().vol_up()
+            findMainWindow().vol_up(2)
         elif dir == 'down':
-            findMainWindow().vol_down()
+            findMainWindow().vol_down(2)
 
         if dir != 'left' and dir != 'right':
             ACCELERATION = 1
-
 
     if pause_mode == 'mouth':
         # IF the mouth aspect ratio (opening of mouth) is more than threshold, pause or play the video
@@ -366,27 +366,25 @@ def return_processed_image(cv_img):
         distance_bottom = distance(centroid_left_eye, centroid_right_eye)
 
         height = max(distance_left, distance_right)
-        width = max(distance_top, distance_bottom)
+        width = min(distance_top, distance_bottom)
 
         aspect_ratio = height / width
         if INITIAL_EYEBROW_ASPECT_RATIO == None:
             INITIAL_EYEBROW_ASPECT_RATIO = aspect_ratio
         cv2.putText(frame,
-                    "Normal Eyebrow AR: {ar}".format(ar=str(round(INITIAL_EYEBROW_ASPECT_RATIO,4))),
+                    "Normal Eyebrow AR: {ar}".format(ar=str(round(INITIAL_EYEBROW_ASPECT_RATIO, 4))),
                     (270, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, GREEN_COLOR, 2)
 
-
-
-        if aspect_ratio > INITIAL_EYEBROW_ASPECT_RATIO + 0.05:
+        if aspect_ratio > INITIAL_EYEBROW_ASPECT_RATIO + 0.05 \
+                and abs(distance_left-distance_right) < 5:
             findMainWindow().vol_up(5)
             cv2.putText(frame, "EYEBROW UP!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
             cv2.putText(frame,
                         "Current Eyebrow AR: {ar}".format(ar=str(round(aspect_ratio, 4))),
                         (270, 50),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, YELLOW_COLOR, 2)
-
-        if aspect_ratio < INITIAL_EYEBROW_ASPECT_RATIO - 0.06:
+        elif aspect_ratio < INITIAL_EYEBROW_ASPECT_RATIO - 0.06:
             findMainWindow().vol_down(5)
             cv2.putText(frame, "EYEBROW DOWN!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED_COLOR, 2)
             cv2.putText(frame,
@@ -401,7 +399,6 @@ def return_processed_image(cv_img):
 
         cv2.line(frame, centroid_right_eyebrow, centroid_right_eye, YELLOW_COLOR, 1)
         cv2.line(frame, centroid_left_eyebrow, centroid_left_eye, YELLOW_COLOR, 1)
-
 
     return cv_img
 
@@ -421,7 +418,7 @@ def set_acceleration(acc_increment=1):
     if ACCELERATION_TIMER == 0:
         ACCELERATION_TIMER = datetime.datetime.now()
     elif datetime.datetime.now() > ACCELERATION_TIMER + datetime.timedelta(seconds=0.5):
-        ACCELERATION = ACCELERATION + ACCELERATION*acc_increment
+        ACCELERATION = ACCELERATION + ACCELERATION * acc_increment
         ACCELERATION_TIMER = 0
 
     if isinstance(RESET_ACCELERATION_TIMER, datetime.datetime):
@@ -434,6 +431,7 @@ def PolyArea(x, y):
 
 def distance(p1, p2):
     return math.sqrt((p1[0] - p2[0]) ** 2 + (p2[1] - p1[1]) ** 2)
+
 
 def reset_aspect_ratio():
     global INITIAL_EYEBROW_ASPECT_RATIO

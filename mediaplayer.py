@@ -23,8 +23,8 @@ class Window(QWidget):
         super().__init__()
 
         self.setMinimumWidth(1200)
-        self.setMinimumHeight(800)
-        self.setGeometry(100, 100, 1200, 800)
+        self.setMinimumHeight(700)
+        self.setGeometry(100, 100, 1200, 700)
         self.setWindowTitle("Media Player")
         self.setWindowIcon(QIcon("icons/player.png"))  # https://www.flaticon.com/premium-icon/youtube_2504965
 
