@@ -418,7 +418,8 @@ def set_acceleration(acc_increment=1):
     if ACCELERATION_TIMER == 0:
         ACCELERATION_TIMER = datetime.datetime.now()
     elif datetime.datetime.now() > ACCELERATION_TIMER + datetime.timedelta(seconds=0.5):
-        ACCELERATION = ACCELERATION + ACCELERATION * acc_increment
+        # max ACCELERATION is 36 or 5000*36 = 3 minutes
+        ACCELERATION = min(ACCELERATION + ACCELERATION * acc_increment,36)
         ACCELERATION_TIMER = 0
 
     if isinstance(RESET_ACCELERATION_TIMER, datetime.datetime):
